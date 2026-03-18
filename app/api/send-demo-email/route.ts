@@ -1,45 +1,70 @@
 import { type NextRequest, NextResponse } from "next/server"
 import nodemailer, { type SendMailOptions } from "nodemailer"
+import { appendSubmissionToSheet } from "@/lib/googleSheets"
 
 interface EmailData {
   firstName: string
   lastName: string
   email: string
+  phone?: string
   message: string
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { firstName, lastName, email, message }: EmailData = await request.json()
+    const { firstName, lastName, email, phone, message }: EmailData = await request.json()
 
     // Validate required fields
     if (!firstName || !lastName || !email || !message) {
       return NextResponse.json({ error: "All fields are required" }, { status: 400 })
     }
 
-    const transporter = nodemailer.createTransport({
-      host: process.env.MAIL_HOST,
-      port: Number.parseInt(process.env.MAIL_PORT || "587"),
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: process.env.MAIL_USERNAME,
-        pass: process.env.MAIL_PASSWORD,
-      },
-      tls: {
-        ciphers: "SSLv3",
-      },
+    const sheetResult = await appendSubmissionToSheet({
+      source: "demo",
+      firstName,
+      lastName,
+      email,
+      phone,
+      message,
     })
 
-    const adminEmail = process.env.ADMIN_EMAIL || "info@aromahpureair.com"
-    const fromEmail = process.env.MAIL_FROM_ADDRESS || "noreply@aromahpureair.com"
-    const fromName = process.env.MAIL_FROM_NAME || "LBRN Training | LSU"
+    if (sheetResult.skipped) {
+      return NextResponse.json(
+        { error: "Google Sheets is not configured. Please set GSHEET_ID, GSHEET_TAB (optional), and GOOGLE_SERVICE_ACCOUNT_JSON_BASE64." },
+        { status: 500 }
+      )
+    }
 
-    // Email to admin
-    const adminMailOptions: SendMailOptions = {
-      from: `"${fromName}" <${fromEmail}>`,
-      to: adminEmail,
-      subject: `New Demo Request from ${firstName} ${lastName}`,
-      html: `
+    const mailHost = process.env.MAIL_HOST
+    const mailUser = process.env.MAIL_USERNAME
+    const mailPass = process.env.MAIL_PASSWORD
+
+    // Email is best-effort: save to sheet is the primary objective.
+    if (mailHost && mailUser && mailPass) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: mailHost,
+          port: Number.parseInt(process.env.MAIL_PORT || "587"),
+          secure: false, // true for 465, false for other ports
+          auth: {
+            user: mailUser,
+            pass: mailPass,
+          },
+          tls: {
+            ciphers: "SSLv3",
+          },
+        })
+
+        const adminEmail = process.env.ADMIN_EMAIL || "info@aromahpureair.com"
+        const fromEmail = process.env.MAIL_FROM_ADDRESS || "noreply@aromahpureair.com"
+        const fromName = process.env.MAIL_FROM_NAME || "LBRN Training | LSU"
+
+        // Email to admin
+        const adminMailOptions: SendMailOptions = {
+          from: `"${fromName}" <${fromEmail}>`,
+          to: adminEmail,
+          subject: `New Demo Request from ${firstName} ${lastName}`,
+          html: `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; color: #4a5b53;">
 
       <!-- Logo -->
@@ -65,6 +90,7 @@ export async function POST(request: NextRequest) {
         <h3 style="color: #364233; margin-top: 0;">Contact Details:</h3>
         <p><strong>Name:</strong> ${firstName} ${lastName}</p>
         <p><strong>Email:</strong> ${email}</p>
+        ${phone ? `<p><strong>Phone:</strong> ${phone}</p>` : ""}
       </div>
 
       <!-- Message -->
@@ -98,14 +124,14 @@ export async function POST(request: NextRequest) {
       </div>
     </div>
       `,
-    }
+        }
 
-    // Acknowledgment email to user
-    const userMailOptions: SendMailOptions = {
-      from: `"${fromName}" <${fromEmail}>`,
-      to: email,
-      subject: "Thank you for your demo request!",
-      html: `
+        // Acknowledgment email to user
+        const userMailOptions: SendMailOptions = {
+          from: `"${fromName}" <${fromEmail}>`,
+          to: email,
+          subject: "Thank you for your demo request!",
+          html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 30px; color: #4a5b53;">
   
   <!-- Logo -->
@@ -162,17 +188,21 @@ export async function POST(request: NextRequest) {
   </div>
 </div>
       `,
+        }
+
+        // Send both emails in parallel
+        await Promise.all([
+          transporter.sendMail(adminMailOptions),
+          transporter.sendMail(userMailOptions),
+        ])
+      } catch (error) {
+        console.error("Error sending emails:", error)
+      }
     }
 
-    // Send both emails in parallel
-    await Promise.all([
-      transporter.sendMail(adminMailOptions),
-      transporter.sendMail(userMailOptions),
-    ])
-
-    return NextResponse.json({ message: "Emails sent successfully" }, { status: 200 })
+    return NextResponse.json({ success: true, message: "Saved successfully" }, { status: 200 })
   } catch (error) {
-    console.error("Error sending emails:", error)
-    return NextResponse.json({ error: "Failed to send emails" }, { status: 500 })
+    console.error("Error handling demo submission:", error)
+    return NextResponse.json({ error: "Failed to process submission" }, { status: 500 })
   }
 }

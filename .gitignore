@@ -19,9 +19,15 @@ yarn-error.log*
 # env files
 .env*
 
+# secrets
+cred.json
+credential.json
+*service-account*.json
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.vercel

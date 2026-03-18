@@ -1,6 +1,7 @@
 // app/api/send/route.ts
 import { type NextRequest, NextResponse } from "next/server"
 import nodemailer from "nodemailer"
+import { appendSubmissionToSheet } from "@/lib/googleSheets"
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,20 +23,44 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const transporter = nodemailer.createTransport({
-      host: process.env.MAIL_HOST,
-      port: Number.parseInt(process.env.MAIL_PORT || "587"),
-      secure: false, // true if using port 465
-      auth: {
-        user: process.env.MAIL_USERNAME,
-        pass: process.env.MAIL_PASSWORD,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
+    const sheetResult = await appendSubmissionToSheet({
+      source: "industries",
+      firstName,
+      lastName,
+      email,
+      phone,
+      message: messageLine1,
+      meta: { city, stateProvince },
     })
 
-    const fromName = process.env.MAIL_FROM_NAME || "Aromahpure Air"
+    if (sheetResult.skipped) {
+      return NextResponse.json(
+        { success: false, message: "Google Sheets is not configured. Please set GSHEET_ID, GSHEET_TAB (optional), and GOOGLE_SERVICE_ACCOUNT_JSON_BASE64." },
+        { status: 500 }
+      )
+    }
+
+    const mailHost = process.env.MAIL_HOST
+    const mailUser = process.env.MAIL_USERNAME
+    const mailPass = process.env.MAIL_PASSWORD
+
+    // Email is best-effort: sheet is the primary objective.
+    if (mailHost && mailUser && mailPass) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: mailHost,
+          port: Number.parseInt(process.env.MAIL_PORT || "587"),
+          secure: false, // true if using port 465
+          auth: {
+            user: mailUser,
+            pass: mailPass,
+          },
+          tls: {
+            rejectUnauthorized: false,
+          },
+        })
+
+        const fromName = process.env.MAIL_FROM_NAME || "Aromahpure Air"
 
     // ✅ Admin email content
     const adminEmailContent = `
@@ -164,30 +189,34 @@ export async function POST(request: NextRequest) {
 </div>
     `
 
-    // Send to admin
-    await transporter.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
-      to: process.env.ADMIN_EMAIL,
-      subject: `New Industry Scenting Inquiry from ${firstName} ${lastName}`,
-      html: adminEmailContent,
-    })
+        // Send to admin
+        await transporter.sendMail({
+          from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+          to: process.env.ADMIN_EMAIL,
+          subject: `New Industry Scenting Inquiry from ${firstName} ${lastName}`,
+          html: adminEmailContent,
+        })
 
-    // Send to user
-    await transporter.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
-      to: email,
-      subject: "New Industry Scenting Inquiry - Thank you for contacting Aromahpure Air",
-      html: userEmailContent,
-    })
+        // Send to user
+        await transporter.sendMail({
+          from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+          to: email,
+          subject: "New Industry Scenting Inquiry - Thank you for contacting Aromahpure Air",
+          html: userEmailContent,
+        })
+      } catch (error) {
+        console.error("❌ Error sending emails:", error)
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      message: "Emails sent successfully",
+      message: "Saved successfully",
     })
   } catch (error) {
-    console.error("❌ Error sending emails:", error)
+    console.error("❌ Error handling industries submission:", error)
     return NextResponse.json(
-      { success: false, message: "Failed to send emails" },
+      { success: false, message: "Failed to process submission" },
       { status: 500 }
     )
   }

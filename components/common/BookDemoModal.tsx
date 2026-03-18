@@ -270,6 +270,7 @@ interface FormData {
   firstName: string
   lastName: string
   email: string
+  phone: string
   message: string
 }
 
@@ -277,6 +278,7 @@ interface FormErrors {
   firstName?: string
   lastName?: string
   email?: string
+  phone?: string
   message?: string
 }
 
@@ -285,6 +287,7 @@ export default function BookDemoModal({ isOpen, onClose, onSuccess }: BookDemoMo
     firstName: "",
     lastName: "",
     email: "",
+    phone: "",
     message: "",
   })
 
@@ -297,6 +300,7 @@ export default function BookDemoModal({ isOpen, onClose, onSuccess }: BookDemoMo
         firstName: "",
         lastName: "",
         email: "",
+        phone: "",
         message: "",
       })
       setErrors({})
@@ -319,6 +323,12 @@ export default function BookDemoModal({ isOpen, onClose, onSuccess }: BookDemoMo
       newErrors.email = "Email is required"
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = "Please enter a valid email address"
+    }
+
+    if (!formData.phone.trim()) {
+      newErrors.phone = "Mobile number is required"
+    } else if (!/^\d{10}$/.test(formData.phone.replace(/\s/g, ""))) {
+      newErrors.phone = "Mobile number must be exactly 10 digits"
     }
 
     if (!formData.message.trim()) {
@@ -460,6 +470,21 @@ export default function BookDemoModal({ isOpen, onClose, onSuccess }: BookDemoMo
                         } focus:border-white outline-none py-2 sm:py-4 text-sm sm:text-lg text-white placeholder-[#D9DFDB] transition-colors duration-200`}
                     />
                     {errors.email && <p className="text-red-300 sm:text-sm text-xs mt-1">{errors.email}</p>}
+                  </div>
+                </RevealWrapper>
+
+                {/* Phone Field */}
+                <RevealWrapper delay={0.65}>
+                  <div>
+                    <input
+                      type="tel"
+                      placeholder="Phone* (Required)"
+                      value={formData.phone}
+                      onChange={(e) => handleInputChange("phone", e.target.value)}
+                      className={`w-full bg-transparent border-b-2 ${errors.phone ? "border-red-400" : "border-white/30"
+                        } focus:border-white outline-none py-2 sm:py-4 text-sm sm:text-lg text-white placeholder-[#D9DFDB] transition-colors duration-200`}
+                    />
+                    {errors.phone && <p className="text-red-300 sm:text-sm text-xs mt-1">{errors.phone}</p>}
                   </div>
                 </RevealWrapper>
 
